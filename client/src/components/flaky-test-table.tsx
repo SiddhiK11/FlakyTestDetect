@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "./status-badge";
 import { Button } from "@/components/ui/button";
@@ -55,9 +55,8 @@ export function FlakyTestTable({ tests, title = "Flaky Tests" }: FlakyTestTableP
             </thead>
             <tbody>
               {tests.map((test) => (
-                <>
+                <Fragment key={test.id}>
                   <tr
-                    key={test.id}
                     className="border-b hover-elevate cursor-pointer"
                     onClick={() => toggleRow(test.id)}
                     data-testid={`row-test-${test.id}`}
@@ -119,7 +118,7 @@ export function FlakyTestTable({ tests, title = "Flaky Tests" }: FlakyTestTableP
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
