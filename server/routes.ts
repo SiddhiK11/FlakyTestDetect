@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { FlakyTestAnalyzer } from "./flaky-analyzer";
-import { insertTestCaseSchema, insertTestExecutionSchema } from "@shared/schema";
+import { insertTestCaseSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const analyzer = new FlakyTestAnalyzer();
@@ -31,7 +31,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get test case by ID
   app.get("/api/test-cases/:id", async (req, res) => {
     try {
-      const testCase = await storage.getTestCase(req.params.id);
+      const testCaseId = parseInt(req.params.id);
+      if (isNaN(testCaseId)) {
+        return res.status(400).json({ error: "Invalid test case ID" });
+      }
+      const testCase = await storage.getTestCase(testCaseId);
       if (!testCase) {
         return res.status(404).json({ error: "Test case not found" });
       }
@@ -41,56 +45,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create test execution and analyze for flakiness
-  app.post("/api/test-executions", async (req, res) => {
+  // Analyze test case for flakiness
+  app.post("/api/test-cases/:id/analyze", async (req, res) => {
     try {
-      const parsed = insertTestExecutionSchema.parse(req.body);
-      const execution = await storage.createTestExecution(parsed);
+      const testCaseId = parseInt(req.params.id);
+      if (isNaN(testCaseId)) {
+        return res.status(400).json({ error: "Invalid test case ID" });
+      }
 
-      const allExecutions = await storage.getTestExecutionsByTestCaseId(parsed.testCaseId);
+      const allExecutions = await storage.getTestExecutionsByTestCaseId(testCaseId);
 
-      if (allExecutions.length >= 5) {
+      if (allExecutions.length >= 3) {
         const analysis = analyzer.analyze(allExecutions);
 
         if (analysis.isFlakey) {
-          const existingFlakyTest = await storage.getFlakyTestByTestCaseId(parsed.testCaseId);
+          const existingFlakyTest = await storage.getFlakyTestByTestCaseId(testCaseId);
 
           if (existingFlakyTest) {
-            await storage.updateFlakyTest(existingFlakyTest.id, {
+            const updated = await storage.updateFlakyTest(existingFlakyTest.id, {
               flakinessScore: analysis.flakinessScore,
               timingVariance: analysis.timingVariance,
               failureRate: analysis.failureRate,
               totalRuns: allExecutions.length,
               failedRuns: allExecutions.filter((e) => e.status === "failed").length,
-              rootCauses: analysis.rootCauses,
-              lastFailedAt: parsed.status === "failed" ? new Date() : existingFlakyTest.lastFailedAt,
+              rootCauses: analysis.rootCauses as any,
+              lastFailedAt: allExecutions.some((e) => e.status === "failed") 
+                ? allExecutions.find((e) => e.status === "failed")?.executedAt 
+                : existingFlakyTest.lastFailedAt,
             });
+            res.json(updated);
           } else {
-            await storage.createFlakyTest({
-              testCaseId: parsed.testCaseId,
+            const created = await storage.createFlakyTest({
+              testCaseId,
               flakinessScore: analysis.flakinessScore,
               timingVariance: analysis.timingVariance,
               failureRate: analysis.failureRate,
               totalRuns: allExecutions.length,
               failedRuns: allExecutions.filter((e) => e.status === "failed").length,
-              rootCauses: analysis.rootCauses,
-              lastFailedAt: parsed.status === "failed" ? new Date() : null,
+              rootCauses: analysis.rootCauses as any,
+              lastFailedAt: allExecutions.find((e) => e.status === "failed")?.executedAt || null,
               isResolved: false,
             });
+            res.status(201).json(created);
           }
+        } else {
+          res.json({ isFlakey: false, message: "Test is not flaky" });
         }
+      } else {
+        res.json({ isFlakey: false, message: "Not enough executions to analyze" });
       }
-
-      res.status(201).json(execution);
     } catch (error) {
-      res.status(400).json({ error: "Invalid execution data" });
+      console.error("Error analyzing test case:", error);
+      res.status(500).json({ error: "Failed to analyze test case" });
     }
   });
 
   // Get executions for a test case
   app.get("/api/test-cases/:id/executions", async (req, res) => {
     try {
-      const executions = await storage.getTestExecutionsByTestCaseId(req.params.id);
+      const testCaseId = parseInt(req.params.id);
+      if (isNaN(testCaseId)) {
+        return res.status(400).json({ error: "Invalid test case ID" });
+      }
+      const executions = await storage.getTestExecutionsByTestCaseId(testCaseId);
       res.json(executions);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch executions" });
@@ -110,7 +127,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get flaky test details
   app.get("/api/flaky-tests/:id", async (req, res) => {
     try {
-      const flakyTest = await storage.getFlakyTest(req.params.id);
+      const flakyTestId = parseInt(req.params.id);
+      if (isNaN(flakyTestId)) {
+        return res.status(400).json({ error: "Invalid flaky test ID" });
+      }
+      const flakyTest = await storage.getFlakyTest(flakyTestId);
       if (!flakyTest) {
         return res.status(404).json({ error: "Flaky test not found" });
       }
@@ -123,7 +144,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Mark flaky test as resolved
   app.patch("/api/flaky-tests/:id/resolve", async (req, res) => {
     try {
-      const updated = await storage.updateFlakyTest(req.params.id, { isResolved: true });
+      const flakyTestId = parseInt(req.params.id);
+      if (isNaN(flakyTestId)) {
+        return res.status(400).json({ error: "Invalid flaky test ID" });
+      }
+      const updated = await storage.updateFlakyTest(flakyTestId, { isResolved: true });
       if (!updated) {
         return res.status(404).json({ error: "Flaky test not found" });
       }
