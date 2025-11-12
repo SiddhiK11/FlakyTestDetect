@@ -13,6 +13,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const testCases = await storage.getAllTestCases();
       res.json(testCases);
     } catch (error) {
+      console.error("Error fetching test cases:", error);
       res.status(500).json({ error: "Failed to fetch test cases" });
     }
   });
@@ -120,6 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const flakyTests = await storage.getAllFlakyTests();
       res.json(flakyTests);
     } catch (error) {
+      console.error("Error fetching flaky tests:", error);
       res.status(500).json({ error: "Failed to fetch flaky tests" });
     }
   });
@@ -177,6 +179,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         flakyPercentage: Math.round(flakyPercentage * 10) / 10,
       });
     } catch (error) {
+      console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ error: "Failed to fetch stats" });
     }
   });
