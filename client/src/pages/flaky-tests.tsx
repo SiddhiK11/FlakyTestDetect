@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { FlakyTestTable } from "@/components/flaky-test-table";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -10,71 +11,40 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Search, Filter } from "lucide-react";
-
-//todo: remove mock functionality
-const mockAllFlakyTests = [
-  {
-    id: "1",
-    name: "test_user_authentication_flow",
-    flakinessScore: 87,
-    failureRate: 42,
-    lastFailed: "1 hour ago",
-    rootCause: "Async timing: API response delays causing timeout failures",
-    totalRuns: 50,
-    failedRuns: 21,
-  },
-  {
-    id: "2",
-    name: "test_payment_checkout_process",
-    flakinessScore: 73,
-    failureRate: 31,
-    lastFailed: "3 hours ago",
-    rootCause: "DOM instability: Payment modal element not consistently found",
-    totalRuns: 45,
-    failedRuns: 14,
-  },
-  {
-    id: "3",
-    name: "test_product_search_filter",
-    flakinessScore: 65,
-    failureRate: 28,
-    lastFailed: "5 hours ago",
-    rootCause: "Resource dependency: Third-party search API intermittent failures",
-    totalRuns: 60,
-    failedRuns: 17,
-  },
-  {
-    id: "4",
-    name: "test_user_profile_update",
-    flakinessScore: 58,
-    failureRate: 24,
-    lastFailed: "8 hours ago",
-    rootCause: "Concurrency: Race condition in profile save operation",
-    totalRuns: 55,
-    failedRuns: 13,
-  },
-  {
-    id: "5",
-    name: "test_notification_system",
-    flakinessScore: 51,
-    failureRate: 19,
-    lastFailed: "12 hours ago",
-    rootCause: "Timing: WebSocket connection timing variability",
-    totalRuns: 70,
-    failedRuns: 13,
-  },
-];
+import { formatDistanceToNow } from "date-fns";
 
 export default function FlakyTests() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("flakiness");
 
-  const filteredTests = mockAllFlakyTests
+  const { data: flakyTests = [], isLoading } = useQuery({
+    queryKey: ["/api/flaky-tests"],
+  });
+
+  const { data: allTestCases = [] } = useQuery({
+    queryKey: ["/api/test-cases"],
+  });
+
+  const formattedTests = flakyTests.map((test: any) => ({
+    id: String(test.id),
+    name: allTestCases.find((tc: any) => tc.id === test.testCaseId)?.title || `Test Case #${test.testCaseId}`,
+    flakinessScore: Math.round(test.flakinessScore),
+    failureRate: Math.round(test.failureRate),
+    lastFailed: test.lastFailedAt 
+      ? formatDistanceToNow(new Date(test.lastFailedAt), { addSuffix: true })
+      : "Never",
+    rootCause: test.rootCauses?.[0]?.description || "Unknown",
+    totalRuns: test.totalRuns,
+    failedRuns: test.failedRuns,
+  }));
+
+  const filteredTests = formattedTests
     .filter((test) =>
       test.name.toLowerCase().includes(searchQuery.toLowerCase())
     )
     .sort((a, b) => {
       if (sortBy === "flakiness") return b.flakinessScore - a.flakinessScore;
+      if (sortBy === "failures") return b.failedRuns - a.failedRuns;
       if (sortBy === "recent") return 0;
       return 0;
     });
@@ -117,7 +87,15 @@ export default function FlakyTests() {
         </Button>
       </div>
 
-      <FlakyTestTable tests={filteredTests} title="All Flaky Tests" />
+      {isLoading ? (
+        <div className="text-center py-8 text-muted-foreground">Loading flaky tests...</div>
+      ) : filteredTests.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          {searchQuery ? "No tests match your search" : "No flaky tests detected"}
+        </div>
+      ) : (
+        <FlakyTestTable tests={filteredTests} title="All Flaky Tests" />
+      )}
     </div>
   );
 }
